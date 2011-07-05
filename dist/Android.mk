@@ -30,6 +30,10 @@ common_sqlite_flags := \
 	-DSQLITE_DEFAULT_FILE_PERMISSIONS=0600 \
 	-Dfdatasync=fdatasync
 
+ifeq ($(WITH_QC_PERF),true)
+common_sqlite_flags += -DQC_PERF
+endif
+
 device_sqlite_flags := $(common_sqlite_flags) \
     -DSQLITE_ENABLE_ICU \
     -DUSE_PREAD64 \
@@ -64,6 +68,11 @@ LOCAL_SHARED_LIBRARIES += liblog \
 
 # include android specific methods
 LOCAL_WHOLE_STATIC_LIBRARIES := libsqlite3_android
+
+ifeq ($(WITH_QC_PERF),true)
+LOCAL_WHOLE_STATIC_LIBRARIES += libqc-sqlite
+LOCAL_SHARED_LIBRARIES += libcutils
+endif
 
 include $(BUILD_SHARED_LIBRARY)
 
