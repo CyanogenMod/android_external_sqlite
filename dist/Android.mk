@@ -46,6 +46,26 @@ LOCAL_WHOLE_STATIC_LIBRARIES := libsqlite3_android
 include $(BUILD_SHARED_LIBRARY)
 
 
+
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES := $(common_src_files)
+
+LOCAL_CFLAGS += $(common_sqlite_flags) -DUSE_PREAD64 -DSQLITE_OMIT_LOAD_EXTENSION
+
+LOCAL_MODULE:= libsqlite
+LOCAL_C_INCLUDES += $(call include-path-for, system-core)/cutils
+LOCAL_STATIC_LIBRARIES := liblog \
+            libicuuc \
+            libicui18n \
+            libutils \
+
+# include android specific methods
+LOCAL_WHOLE_STATIC_LIBRARIES := libsqlite3_android
+
+include $(BUILD_STATIC_LIBRARY)
+
+
 ifeq ($(WITH_HOST_DALVIK),true)
     include $(CLEAR_VARS)
     LOCAL_SRC_FILES := $(common_src_files)
