@@ -2,9 +2,7 @@ LOCAL_PATH:= $(call my-dir)
 
 libsqlite3_android_local_src_files := \
 	PhoneNumberUtils.cpp \
-	PhoneticStringUtils.cpp \
 	OldPhoneNumberUtils.cpp \
-	PhonebookIndex.cpp \
 	sqlite3_android.cpp
 
 libsqlite3_android_c_includes := \
@@ -25,24 +23,6 @@ ifeq ($(WITH_HOST_DALVIK),true)
     LOCAL_MODULE:= libsqlite3_android
     include $(BUILD_HOST_STATIC_LIBRARY)
 endif
-
-# Test for PhoneticStringUtils
-include $(CLEAR_VARS)
-
-LOCAL_MODULE:= libsqlite3_phonetic_string_utils_test
-
-LOCAL_CFLAGS += -Wall -Werror
-
-LOCAL_SRC_FILES := \
-	PhoneticStringUtils.cpp \
-	PhoneticStringUtilsTest.cpp
-
-LOCAL_MODULE_TAGS := optional
-
-LOCAL_SHARED_LIBRARIES := \
-	libutils
-
-include $(BUILD_EXECUTABLE)
 
 # Test for PhoneNumberUtils
 #
