@@ -32,6 +32,10 @@ common_sqlite_flags := \
 
 common_src_files := sqlite3.c
 
+ifeq ($(WITH_QC_PERF),true)
+common_sqlite_flags += -DQC_PERF
+endif
+
 # the device library
 include $(CLEAR_VARS)
 
