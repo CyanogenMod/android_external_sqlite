@@ -57,6 +57,7 @@ LOCAL_SHARED_LIBRARIES += liblog \
 LOCAL_WHOLE_STATIC_LIBRARIES := libsqlite3_android
 
 ifeq ($(WITH_QC_PERF),true)
+LOCAL_CFLAGS += -DWITH_QC_PERF
 LOCAL_WHOLE_STATIC_LIBRARIES += libqc-sqlite
 LOCAL_SHARED_LIBRARIES += libcutils
 endif
