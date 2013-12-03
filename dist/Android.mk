@@ -30,8 +30,10 @@ common_sqlite_flags := \
 	-DSQLITE_DEFAULT_FILE_PERMISSIONS=0600 \
 	-Dfdatasync=fdatasync
 
+ifeq ($(call is-vendor-board-platform,QCOM),true)
 ifeq ($(WITH_QC_PERF),true)
 common_sqlite_flags += -DQC_PERF
+endif
 endif
 
 device_sqlite_flags := $(common_sqlite_flags) \
