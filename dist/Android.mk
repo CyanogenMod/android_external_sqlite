@@ -32,8 +32,10 @@ common_sqlite_flags := \
 
 common_src_files := sqlite3.c
 
+ifeq ($(call is-vendor-board-platform,QCOM),true)
 ifeq ($(WITH_QC_PERF),true)
 common_sqlite_flags += -DQC_PERF
+endif
 endif
 
 # the device library
