@@ -32,7 +32,7 @@ common_sqlite_flags := \
 
 ifeq ($(call is-vendor-board-platform,QCOM),true)
 ifeq ($(WITH_QC_PERF),true)
-common_sqlite_flags += -DQC_PERF
+android_common_sqlite_flags += -DQC_PERF
 endif
 endif
 
@@ -51,7 +51,7 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(common_src_files)
 
-LOCAL_CFLAGS += $(device_sqlite_flags)
+LOCAL_CFLAGS += $(android_common_sqlite_flags) $(device_sqlite_flags)
 
 LOCAL_SHARED_LIBRARIES := libdl
 
@@ -113,7 +113,7 @@ LOCAL_SHARED_LIBRARIES := libsqlite \
             libicui18n \
             libutils
 
-LOCAL_CFLAGS += $(device_sqlite_flags)
+LOCAL_CFLAGS += $(android_common_sqlite_flags) $(device_sqlite_flags)
 
 LOCAL_MODULE_PATH := $(TARGET_OUT_OPTIONAL_EXECUTABLES)
 
