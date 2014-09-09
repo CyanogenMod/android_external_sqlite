@@ -1,6 +1,6 @@
 diff -r -u -d orig/shell.c ./shell.c
---- orig/shell.c	2012-04-19 19:18:38.000000000 -0700
-+++ ./shell.c	2012-04-19 19:26:02.000000000 -0700
+--- orig/shell.c	2014-09-05 01:30:21.680491520 +0900
++++ ./shell.c	2014-09-09 10:30:37.568281406 +0900
 @@ -35,6 +35,11 @@
  #include "sqlite3.h"
  #include <ctype.h>
@@ -35,9 +35,45 @@ diff -r -u -d orig/shell.c ./shell.c
  }
  
 diff -r -u -d orig/sqlite3.c ./sqlite3.c
---- orig/sqlite3.c	2012-04-19 19:18:38.000000000 -0700
-+++ ./sqlite3.c	2012-04-19 19:26:02.000000000 -0700
-@@ -25387,7 +25387,12 @@
+--- orig/sqlite3.c	2014-09-05 01:30:21.726491518 +0900
++++ ./sqlite3.c	2014-09-09 10:30:37.587281405 +0900
+@@ -25,6 +25,13 @@
+ #ifndef SQLITE_API
+ # define SQLITE_API
+ #endif
++#ifdef QC_PERF
++extern void sqlite3_androidopt_init(void*, const char*) __attribute__((weak));
++extern void sqlite3_androidopt_open(void*, const char*, unsigned, int*) __attribute__((weak));
++extern void sqlite3_androidopt_close(void*) __attribute__((weak));
++extern int  sqlite3_androidopt_handle_pragma(void*, char*, char*) __attribute__((weak));
++#endif
++
+ /************** Begin file sqliteInt.h ***************************************/
+ /*
+ ** 2001 September 15
+@@ -9816,6 +9823,7 @@
+   void (*xUnlockNotify)(void **, int);  /* Unlock notify callback */
+   sqlite3 *pNextBlocked;        /* Next in list of all blocked connections */
+ #endif
++  u8 isSettingOverride;         /* True if db settings have been overridden */
+ };
+ 
+ /*
+@@ -24853,6 +24861,13 @@
+ */
+ #if SQLITE_OS_UNIX              /* This file is used on unix only */
+ 
++/* Use posix_fallocate() if it is available
++*/
++#if !defined(HAVE_POSIX_FALLOCATE) \
++      && (_XOPEN_SOURCE >= 600 || _POSIX_C_SOURCE >= 200112L)
++# define HAVE_POSIX_FALLOCATE 1
++#endif
++
+ /*
+ ** There are various methods for file locking used for concurrency
+ ** control:
+@@ -25387,7 +25402,12 @@
  #else
    { "pread64",      (sqlite3_syscall_ptr)0,          0  },
  #endif
@@ -50,7 +86,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
  
    { "write",        (sqlite3_syscall_ptr)write,      0  },
  #define osWrite     ((ssize_t(*)(int,const void*,size_t))aSyscall[11].pCurrent)
-@@ -25405,8 +25410,14 @@
+@@ -25405,8 +25425,14 @@
  #else
    { "pwrite64",     (sqlite3_syscall_ptr)0,          0  },
  #endif
@@ -65,7 +101,107 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
  
  #if SQLITE_ENABLE_LOCKING_STYLE
    { "fchmod",       (sqlite3_syscall_ptr)fchmod,     0  },
-@@ -93937,7 +93948,7 @@
+@@ -28473,7 +28499,7 @@
+   SimulateIOError( rc=1 );
+   if( rc!=0 ){
+     ((unixFile*)id)->lastErrno = errno;
+-    return SQLITE_IOERR_FSTAT;
++    return unixLogError(SQLITE_IOERR_FSTAT, "fstat", ((unixFile*)id)->zPath);
+   }
+   *pSize = buf.st_size;
+ 
+@@ -28508,7 +28534,9 @@
+     i64 nSize;                    /* Required file size */
+     struct stat buf;              /* Used to hold return values of fstat() */
+    
+-    if( osFstat(pFile->h, &buf) ) return SQLITE_IOERR_FSTAT;
++    if( osFstat(pFile->h, &buf) ) {
++      return unixLogError(SQLITE_IOERR_FSTAT, "fstat", pFile->zPath);
++    }
+ 
+     nSize = ((nByte+pFile->szChunk-1) / pFile->szChunk) * pFile->szChunk;
+     if( nSize>(i64)buf.st_size ){
+@@ -28906,7 +28934,7 @@
+     ** with the same permissions.
+     */
+     if( osFstat(pDbFd->h, &sStat) && pInode->bProcessLock==0 ){
+-      rc = SQLITE_IOERR_FSTAT;
++      rc = unixLogError(SQLITE_IOERR_FSTAT, "fstat", pDbFd->zPath);
+       goto shm_open_err;
+     }
+ 
+@@ -29078,11 +29106,19 @@
+         ** the requested memory region.
+         */
+         if( !bExtend ) goto shmpage_out;
++#if defined(HAVE_POSIX_FALLOCATE) && HAVE_POSIX_FALLOCATE
++        if( osFallocate(pShmNode->h, sStat.st_size, nByte)!=0 ){
++          rc = unixLogError(SQLITE_FULL, "fallocate",
++                            pShmNode->zFilename);
++          goto shmpage_out;
++        }
++#else
+         if( robust_ftruncate(pShmNode->h, nByte) ){
+           rc = unixLogError(SQLITE_IOERR_SHMSIZE, "ftruncate",
+                             pShmNode->zFilename);
+           goto shmpage_out;
+         }
++#endif
+       }
+     }
+ 
+@@ -29995,7 +30031,7 @@
+       *pUid = sStat.st_uid;
+       *pGid = sStat.st_gid;
+     }else{
+-      rc = SQLITE_IOERR_FSTAT;
++      rc = unixLogError(SQLITE_IOERR_FSTAT, "stat", zDb);
+     }
+   }else if( flags & SQLITE_OPEN_DELETEONCLOSE ){
+     *pMode = 0600;
+@@ -72586,6 +72622,14 @@
+         assert(p->iSize<=p->nBuf);
+         rc = sqlite3OsWrite(p->pReal, p->zBuf, p->iSize, 0);
+       }
++      if( rc!=SQLITE_OK ){
++        /* If an error occurred while writing to the file, close it before
++        ** returning. This way, SQLite uses the in-memory journal data to
++        ** roll back changes made to the internal page-cache before this
++        ** function was called.  */
++        sqlite3OsClose(pReal);
++        p->pReal = 0;
++      }
+     }
+   }
+   return rc;
+@@ -92412,6 +92456,14 @@
+     goto pragma_out;
+   }
+ 
++#ifdef QC_PERF
++  if( sqlite3_androidopt_handle_pragma ) {
++    if( sqlite3_androidopt_handle_pragma(db, zLeft, zRight) == 1 ) {
++      goto pragma_out;
++    }
++  }
++#endif
++
+   /* Send an SQLITE_FCNTL_PRAGMA file-control to the underlying VFS
+   ** connection.  If it returns SQLITE_OK, then assume that the VFS
+   ** handled the pragma and generate a no-op prepared statement.
+@@ -92659,6 +92711,11 @@
+         /* If the "=MODE" part does not match any known journal mode,
+         ** then do a query */
+         eMode = PAGER_JOURNALMODE_QUERY;
++      }else if( db->isSettingOverride==1 ){
++        /* Skip journal mode changes if override in effect */
++        sqlite3VdbeAddOp4(v, OP_String, strlen(zMode), 1, 1, zMode, P4_STATIC);
++        sqlite3VdbeAddOp2(v, OP_ResultRow, 1, 1);
++        goto pragma_out;
+       }
+     }
+     if( eMode==PAGER_JOURNALMODE_QUERY && pId2->n==0 ){
+@@ -93937,7 +93994,7 @@
    }
    if( pDb->pSchema->file_format>SQLITE_MAX_FILE_FORMAT ){
      sqlite3SetString(pzErrMsg, db, "unsupported file format");
@@ -74,61 +210,85 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
      goto initone_error_out;
    }
  
-@@ -112387,7 +112398,7 @@
- extern "C" {
- #endif  /* __cplusplus */
+@@ -113169,6 +113226,11 @@
+   if( !sqlite3SafetyCheckSickOrOk(db) ){
+     return SQLITE_MISUSE_BKPT;
+   }
++#ifdef QC_PERF
++  if (sqlite3_androidopt_close) {
++    sqlite3_androidopt_close(db);
++  }
++#endif
+   sqlite3_mutex_enter(db->mutex);
  
--SQLITE_PRIVATE int sqlite3Fts3Init(sqlite3 *db);
-+SQLITE_PRIVATE int sqlite3Fts3Init(sqlite3 *db, const char* registerAs); // Android Change
- 
- #if 0
- }  /* extern "C" */
-@@ -114717,9 +114728,24 @@
+   /* Force xDestroy calls on all virtual tables */
+@@ -114600,6 +114662,11 @@
+     }
+   }
+   sqlite3_mutex_enter(db->mutex);
++#ifdef QC_PERF
++  if( sqlite3_androidopt_init ) {
++    sqlite3_androidopt_init(db, zFilename);
++  }
++#endif
+   db->errMask = 0xff;
+   db->nDb = 2;
+   db->magic = SQLITE_MAGIC_BUSY;
+@@ -114717,9 +114784,9 @@
  #endif
  
  #ifdef SQLITE_ENABLE_FTS3
 -  if( !db->mallocFailed && rc==SQLITE_OK ){
 -    rc = sqlite3Fts3Init(db);
 -  }
-+  // Begin Android change
-+  #ifdef SQLITE_ENABLE_FTS3_BACKWARDS
-+    /* Also register as fts1 and fts2, for backwards compatability on
-+    ** systems known to have never seen a pre-fts3 database.
-+    */
 +    if( !db->mallocFailed && rc==SQLITE_OK ){
-+      rc = sqlite3Fts3Init(db, "fts1");
++      rc = sqlite3Fts3Init(db);
 +    }
-+
-+    if( !db->mallocFailed && rc==SQLITE_OK ){
-+      rc = sqlite3Fts3Init(db, "fts2");
-+    }
-+  #endif
-+
-+    if( !db->mallocFailed && rc==SQLITE_OK ){
-+      rc = sqlite3Fts3Init(db, "fts3");
-+    }
-+  // End Android change
  #endif
  
  #ifdef SQLITE_ENABLE_ICU
-@@ -120143,7 +120169,7 @@
- ** SQLite. If fts3 is built as a dynamically loadable extension, this
- ** function is called by the sqlite3_extension_init() entry point.
- */
--SQLITE_PRIVATE int sqlite3Fts3Init(sqlite3 *db){
-+SQLITE_PRIVATE int sqlite3Fts3Init(sqlite3 *db, const char* registerAs){ // Android Change
-   int rc = SQLITE_OK;
-   Fts3Hash *pHash = 0;
-   const sqlite3_tokenizer_module *pSimple = 0;
-@@ -120204,7 +120230,10 @@
+@@ -114765,6 +114832,14 @@
+     db = 0;
+   }else if( rc!=SQLITE_OK ){
+     db->magic = SQLITE_MAGIC_SICK;
++  }else {
++#ifdef QC_PERF
++    if (sqlite3_androidopt_open) {
++      int override = 0;
++      sqlite3_androidopt_open(db, zFilename, flags, &override);
++      db->isSettingOverride = override;
++    }
++#endif
+   }
+   *ppDb = db;
+   return sqlite3ApiExit(0, rc);
+@@ -120196,16 +120271,28 @@
+   ** module with sqlite.
+   */
+   if( SQLITE_OK==rc 
++#ifndef ANDROID    /* fts3_tokenizer disabled for security reasons */
+    && SQLITE_OK==(rc = sqlite3Fts3InitHashTable(db, pHash, "fts3_tokenizer"))
++#endif
+    && SQLITE_OK==(rc = sqlite3_overload_function(db, "snippet", -1))
+    && SQLITE_OK==(rc = sqlite3_overload_function(db, "offsets", 1))
+    && SQLITE_OK==(rc = sqlite3_overload_function(db, "matchinfo", 1))
+    && SQLITE_OK==(rc = sqlite3_overload_function(db, "matchinfo", 2))
     && SQLITE_OK==(rc = sqlite3_overload_function(db, "optimize", 1))
    ){
++#ifdef SQLITE_ENABLE_FTS3_BACKWARDS
++    rc = sqlite3_create_module_v2(
++        db, "fts1", &fts3Module, (void *)pHash, 0
++        );
++    if(rc) return rc;
++    rc = sqlite3_create_module_v2(
++        db, "fts2", &fts3Module, (void *)pHash, 0
++        );
++    if(rc) return rc;
++#endif
      rc = sqlite3_create_module_v2(
--        db, "fts3", &fts3Module, (void *)pHash, hashDestroy
-+        // Begin Android change
-+        // Also register as fts1 and fts2
-+        db, registerAs, &fts3Module, (void *)pHash, hashDestroy
-+        // End Android change
-     );
+         db, "fts3", &fts3Module, (void *)pHash, hashDestroy
+-    );
++        );
      if( rc==SQLITE_OK ){
        rc = sqlite3_create_module_v2(
+           db, "fts4", &fts3Module, (void *)pHash, 0
