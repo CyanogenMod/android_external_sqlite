@@ -1,6 +1,6 @@
 diff -r -u -d orig/shell.c ./shell.c
---- orig/shell.c	2014-09-05 01:30:21.680491520 +0900
-+++ ./shell.c	2014-09-09 10:30:37.568281406 +0900
+--- orig/shell.c	2014-09-09 10:51:34.413220429 +0900
++++ ./shell.c	2014-09-09 10:51:34.436220428 +0900
 @@ -35,6 +35,11 @@
  #include "sqlite3.h"
  #include <ctype.h>
@@ -11,11 +11,11 @@ diff -r -u -d orig/shell.c ./shell.c
 +#endif
 +// End Android Add
  
- #if !defined(_WIN32) && !defined(WIN32) && !defined(__OS2__)
+ #if !defined(_WIN32) && !defined(WIN32)
  # include <signal.h>
-@@ -1463,6 +1468,20 @@
- #ifndef SQLITE_OMIT_LOAD_EXTENSION
-     sqlite3_enable_load_extension(p->db, 1);
+@@ -1126,6 +1131,20 @@
+     sqlite3_status(SQLITE_STATUS_PARSER_STACK, &iCur, &iHiwtr, bReset);
+     fprintf(pArg->out, "Deepest Parser Stack:                %d (max %d)\n", iCur, iHiwtr);
  #endif
 +    // Begin Android Add
 +    #ifndef NO_ANDROID_FUNCS
@@ -32,11 +32,11 @@ diff -r -u -d orig/shell.c ./shell.c
 +    #endif
 +    // End Android Add
    }
- }
  
+   if( pArg && pArg->out && db ){
 diff -r -u -d orig/sqlite3.c ./sqlite3.c
---- orig/sqlite3.c	2014-09-05 01:30:21.726491518 +0900
-+++ ./sqlite3.c	2014-09-09 10:30:37.587281405 +0900
+--- orig/sqlite3.c	2014-09-09 10:51:34.434220428 +0900
++++ ./sqlite3.c	2014-09-09 10:51:34.456220427 +0900
 @@ -25,6 +25,13 @@
  #ifndef SQLITE_API
  # define SQLITE_API
@@ -51,7 +51,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
  /************** Begin file sqliteInt.h ***************************************/
  /*
  ** 2001 September 15
-@@ -9816,6 +9823,7 @@
+@@ -10539,6 +10546,7 @@
    void (*xUnlockNotify)(void **, int);  /* Unlock notify callback */
    sqlite3 *pNextBlocked;        /* Next in list of all blocked connections */
  #endif
@@ -59,13 +59,13 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
  };
  
  /*
-@@ -24853,6 +24861,13 @@
+@@ -24109,6 +24117,13 @@
  */
  #if SQLITE_OS_UNIX              /* This file is used on unix only */
  
 +/* Use posix_fallocate() if it is available
 +*/
-+#if !defined(HAVE_POSIX_FALLOCATE) \
++#if !defined(HAVE_POSIX_FALLOCATE) && !defined(__ANDROID__) \
 +      && (_XOPEN_SOURCE >= 600 || _POSIX_C_SOURCE >= 200112L)
 +# define HAVE_POSIX_FALLOCATE 1
 +#endif
@@ -73,7 +73,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
  /*
  ** There are various methods for file locking used for concurrency
  ** control:
-@@ -25387,7 +25402,12 @@
+@@ -24660,7 +24675,12 @@
  #else
    { "pread64",      (sqlite3_syscall_ptr)0,          0  },
  #endif
@@ -86,7 +86,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
  
    { "write",        (sqlite3_syscall_ptr)write,      0  },
  #define osWrite     ((ssize_t(*)(int,const void*,size_t))aSyscall[11].pCurrent)
-@@ -25405,8 +25425,14 @@
+@@ -24678,8 +24698,14 @@
  #else
    { "pwrite64",     (sqlite3_syscall_ptr)0,          0  },
  #endif
@@ -99,9 +99,9 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
                      aSyscall[13].pCurrent)
 +#endif
  
- #if SQLITE_ENABLE_LOCKING_STYLE
    { "fchmod",       (sqlite3_syscall_ptr)fchmod,     0  },
-@@ -28473,7 +28499,7 @@
+ #define osFchmod    ((int(*)(int,mode_t))aSyscall[14].pCurrent)
+@@ -27909,7 +27935,7 @@
    SimulateIOError( rc=1 );
    if( rc!=0 ){
      ((unixFile*)id)->lastErrno = errno;
@@ -110,7 +110,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
    }
    *pSize = buf.st_size;
  
-@@ -28508,7 +28534,9 @@
+@@ -27944,7 +27970,9 @@
      i64 nSize;                    /* Required file size */
      struct stat buf;              /* Used to hold return values of fstat() */
     
@@ -121,7 +121,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
  
      nSize = ((nByte+pFile->szChunk-1) / pFile->szChunk) * pFile->szChunk;
      if( nSize>(i64)buf.st_size ){
-@@ -28906,7 +28934,7 @@
+@@ -28510,7 +28538,7 @@
      ** with the same permissions.
      */
      if( osFstat(pDbFd->h, &sStat) && pInode->bProcessLock==0 ){
@@ -130,27 +130,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
        goto shm_open_err;
      }
  
-@@ -29078,11 +29106,19 @@
-         ** the requested memory region.
-         */
-         if( !bExtend ) goto shmpage_out;
-+#if defined(HAVE_POSIX_FALLOCATE) && HAVE_POSIX_FALLOCATE
-+        if( osFallocate(pShmNode->h, sStat.st_size, nByte)!=0 ){
-+          rc = unixLogError(SQLITE_FULL, "fallocate",
-+                            pShmNode->zFilename);
-+          goto shmpage_out;
-+        }
-+#else
-         if( robust_ftruncate(pShmNode->h, nByte) ){
-           rc = unixLogError(SQLITE_IOERR_SHMSIZE, "ftruncate",
-                             pShmNode->zFilename);
-           goto shmpage_out;
-         }
-+#endif
-       }
-     }
- 
-@@ -29995,7 +30031,7 @@
+@@ -29848,7 +29876,7 @@
        *pUid = sStat.st_uid;
        *pGid = sStat.st_gid;
      }else{
@@ -159,22 +139,37 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
      }
    }else if( flags & SQLITE_OPEN_DELETEONCLOSE ){
      *pMode = 0600;
-@@ -72586,6 +72622,14 @@
-         assert(p->iSize<=p->nBuf);
-         rc = sqlite3OsWrite(p->pReal, p->zBuf, p->iSize, 0);
-       }
-+      if( rc!=SQLITE_OK ){
-+        /* If an error occurred while writing to the file, close it before
-+        ** returning. This way, SQLite uses the in-memory journal data to
-+        ** roll back changes made to the internal page-cache before this
-+        ** function was called.  */
-+        sqlite3OsClose(pReal);
-+        p->pReal = 0;
+@@ -35811,12 +35839,20 @@
+       ** the requested memory region.
+       */
+       if( !isWrite ) goto shmpage_out;
++#if defined(HAVE_POSIX_FALLOCATE) && HAVE_POSIX_FALLOCATE
++      if( osFallocate(pShmNode->h, sStat.st_size, nByte)!=0 ){
++        rc = unixLogError(SQLITE_FULL, "fallocate",
++                          pShmNode->zFilename);
++        goto shmpage_out;
 +      }
++#else
+       rc = winTruncate((sqlite3_file *)&pShmNode->hFile, nByte);
+       if( rc!=SQLITE_OK ){
+         rc = winLogError(SQLITE_IOERR_SHMSIZE, osGetLastError(),
+                          "winShmMap2", pDbFd->zPath);
+         goto shmpage_out;
+       }
++#endif
      }
-   }
-   return rc;
-@@ -92412,6 +92456,14 @@
+ 
+     /* Map the requested memory region into this processes address space. */
+@@ -76157,7 +76193,7 @@
+       }
+       if( rc!=SQLITE_OK ){
+         /* If an error occurred while writing to the file, close it before
+-        ** returning. This way, SQLite uses the in-memory journal data to 
++        ** returning. This way, SQLite uses the in-memory journal data to
+         ** roll back changes made to the internal page-cache before this
+         ** function was called.  */
+         sqlite3OsClose(pReal);
+@@ -98953,6 +98989,14 @@
      goto pragma_out;
    }
  
@@ -189,7 +184,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
    /* Send an SQLITE_FCNTL_PRAGMA file-control to the underlying VFS
    ** connection.  If it returns SQLITE_OK, then assume that the VFS
    ** handled the pragma and generate a no-op prepared statement.
-@@ -92659,6 +92711,11 @@
+@@ -99222,6 +99266,11 @@
          /* If the "=MODE" part does not match any known journal mode,
          ** then do a query */
          eMode = PAGER_JOURNALMODE_QUERY;
@@ -201,7 +196,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
        }
      }
      if( eMode==PAGER_JOURNALMODE_QUERY && pId2->n==0 ){
-@@ -93937,7 +93994,7 @@
+@@ -100867,7 +100916,7 @@
    }
    if( pDb->pSchema->file_format>SQLITE_MAX_FILE_FORMAT ){
      sqlite3SetString(pzErrMsg, db, "unsupported file format");
@@ -210,7 +205,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
      goto initone_error_out;
    }
  
-@@ -113169,6 +113226,11 @@
+@@ -122996,6 +123045,11 @@
    if( !sqlite3SafetyCheckSickOrOk(db) ){
      return SQLITE_MISUSE_BKPT;
    }
@@ -221,8 +216,8 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
 +#endif
    sqlite3_mutex_enter(db->mutex);
  
-   /* Force xDestroy calls on all virtual tables */
-@@ -114600,6 +114662,11 @@
+   /* Force xDisconnect calls on all virtual tables */
+@@ -124649,6 +124703,11 @@
      }
    }
    sqlite3_mutex_enter(db->mutex);
@@ -234,7 +229,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
    db->errMask = 0xff;
    db->nDb = 2;
    db->magic = SQLITE_MAGIC_BUSY;
-@@ -114717,9 +114784,9 @@
+@@ -124770,9 +124829,9 @@
  #endif
  
  #ifdef SQLITE_ENABLE_FTS3
@@ -247,7 +242,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
  #endif
  
  #ifdef SQLITE_ENABLE_ICU
-@@ -114765,6 +114832,14 @@
+@@ -124818,6 +124877,14 @@
      db = 0;
    }else if( rc!=SQLITE_OK ){
      db->magic = SQLITE_MAGIC_SICK;
@@ -261,8 +256,8 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
 +#endif
    }
    *ppDb = db;
-   return sqlite3ApiExit(0, rc);
-@@ -120196,16 +120271,28 @@
+ #ifdef SQLITE_ENABLE_SQLLOG
+@@ -130660,16 +130727,28 @@
    ** module with sqlite.
    */
    if( SQLITE_OK==rc 
