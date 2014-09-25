@@ -32,10 +32,8 @@ common_sqlite_flags := \
 
 common_src_files := sqlite3.c
 
-ifeq ($(call is-vendor-board-platform,QCOM),true)
-ifeq ($(TARGET_HAVE_QC_PERF),true)
+ifeq ($(TARGET_HAVE_QC_PERF_SQLITE),true)
 android_common_sqlite_flags += -DQC_PERF
-endif
 endif
 
 # the device library
@@ -63,7 +61,7 @@ LOCAL_SHARED_LIBRARIES += liblog \
 # include android specific methods
 LOCAL_WHOLE_STATIC_LIBRARIES := libsqlite3_android
 
-ifeq ($(TARGET_HAVE_QC_PERF),true)
+ifeq ($(TARGET_HAVE_QC_PERF_SQLITE),true)
 LOCAL_WHOLE_STATIC_LIBRARIES += libqc-sqlite
 LOCAL_SHARED_LIBRARIES += libcutils
 endif
