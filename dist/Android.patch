@@ -1,6 +1,6 @@
 diff -r -u -d orig/shell.c ./shell.c
---- orig/shell.c	2015-06-12 15:32:23.260341869 -0700
-+++ ./shell.c	2015-06-12 15:33:39.024707940 -0700
+--- orig/shell.c	2016-03-03 08:37:10.000000000 -0800
++++ ./shell.c	2016-02-19 19:35:25.604941523 -0800
 @@ -52,6 +52,12 @@
  #endif
  #include <ctype.h>
@@ -14,7 +14,7 @@ diff -r -u -d orig/shell.c ./shell.c
  
  #if !defined(_WIN32) && !defined(WIN32)
  # include <signal.h>
-@@ -1938,6 +1944,22 @@
+@@ -2063,6 +2069,22 @@
                              readfileFunc, 0, 0);
      sqlite3_create_function(p->db, "writefile", 2, SQLITE_UTF8, 0,
                              writefileFunc, 0, 0);
@@ -38,10 +38,31 @@ diff -r -u -d orig/shell.c ./shell.c
  }
  
 diff -r -u -d orig/sqlite3.c ./sqlite3.c
---- orig/sqlite3.c	2015-06-12 15:32:23.828344614 -0700
-+++ ./sqlite3.c	2015-06-12 15:33:39.048708056 -0700
-@@ -25292,6 +25292,13 @@
+--- orig/sqlite3.c	2016-03-03 08:37:10.000000000 -0800
++++ ./sqlite3.c	2016-03-11 17:48:46.001041005 -0800
+@@ -1,6 +1,6 @@
+ /******************************************************************************
+ ** This file is an amalgamation of many separate C source files from SQLite
+-** version 3.11.1.  By combining all the individual C code files into this 
++** version 3.11.0.  By combining all the individual C code files into this 
+ ** single large file, the entire code can be compiled as a single translation
+ ** unit.  This allows many compilers to do optimizations that would not be
+ ** possible if the files were compiled separately.  Performance improvements
+@@ -328,9 +328,9 @@
+ ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
+ ** [sqlite_version()] and [sqlite_source_id()].
  */
+-#define SQLITE_VERSION        "3.11.1"
+-#define SQLITE_VERSION_NUMBER 3011001
+-#define SQLITE_SOURCE_ID      "2016-03-03 16:17:53 f047920ce16971e573bc6ec9a48b118c9de2b3a7"
++#define SQLITE_VERSION        "3.11.0"
++#define SQLITE_VERSION_NUMBER 3011000
++#define SQLITE_SOURCE_ID      "2016-02-15 17:29:24 3d862f207e3adc00f78066799ac5a8c282430a5f"
+ 
+ /*
+ ** CAPI3REF: Run-Time Library Version Numbers
+@@ -27145,6 +27145,13 @@
+ /* #include "sqliteInt.h" */
  #if SQLITE_OS_UNIX              /* This file is used on unix only */
  
 +/* Use posix_fallocate() if it is available
@@ -54,7 +75,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
  /*
  ** There are various methods for file locking used for concurrency
  ** control:
-@@ -25846,7 +25853,12 @@
+@@ -27689,7 +27696,12 @@
  #else
    { "pread64",      (sqlite3_syscall_ptr)0,          0  },
  #endif
@@ -67,7 +88,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
  
    { "write",        (sqlite3_syscall_ptr)write,      0  },
  #define osWrite     ((ssize_t(*)(int,const void*,size_t))aSyscall[11].pCurrent)
-@@ -25864,8 +25876,14 @@
+@@ -27707,8 +27719,14 @@
  #else
    { "pwrite64",     (sqlite3_syscall_ptr)0,          0  },
  #endif
@@ -80,9 +101,9 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
                      aSyscall[13].pCurrent)
 +#endif
  
-   { "fchmod",       (sqlite3_syscall_ptr)fchmod,     0  },
+   { "fchmod",       (sqlite3_syscall_ptr)fchmod,          0  },
  #define osFchmod    ((int(*)(int,mode_t))aSyscall[14].pCurrent)
-@@ -29115,7 +29133,7 @@
+@@ -30930,7 +30948,7 @@
    SimulateIOError( rc=1 );
    if( rc!=0 ){
      storeLastErrno((unixFile*)id, errno);
@@ -91,7 +112,7 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
    }
    *pSize = buf.st_size;
  
-@@ -29151,7 +29169,7 @@
+@@ -30966,7 +30984,7 @@
      struct stat buf;              /* Used to hold return values of fstat() */
     
      if( osFstat(pFile->h, &buf) ){
@@ -100,16 +121,16 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
      }
  
      nSize = ((nByte+pFile->szChunk-1) / pFile->szChunk) * pFile->szChunk;
-@@ -29736,7 +29754,7 @@
+@@ -31540,7 +31558,7 @@
      ** with the same permissions.
      */
-     if( osFstat(pDbFd->h, &sStat) && pInode->bProcessLock==0 ){
+     if( osFstat(pDbFd->h, &sStat) ){
 -      rc = SQLITE_IOERR_FSTAT;
 +      rc = unixLogError(SQLITE_IOERR_FSTAT, "fstat", pDbFd->zPath);
        goto shm_open_err;
      }
  
-@@ -31082,7 +31100,7 @@
+@@ -32871,7 +32889,7 @@
        *pUid = sStat.st_uid;
        *pGid = sStat.st_gid;
      }else{
@@ -118,32 +139,69 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
      }
    }else if( flags & SQLITE_OPEN_DELETEONCLOSE ){
      *pMode = 0600;
-@@ -105877,7 +105895,7 @@
+@@ -36295,7 +36313,7 @@
+     }else{
+       sqlite3_log(SQLITE_ERROR, "failed to HeapCompact (%lu), heap=%p",
+                   osGetLastError(), (void*)hHeap);
+-      rc = SQLITE_ERROR;
++      rc = SQLITE_CORRUPT_BKPT; // Android Change from "rc = SQLITE_ERROR;"
+     }
    }
-   if( pDb->pSchema->file_format>SQLITE_MAX_FILE_FORMAT ){
-     sqlite3SetString(pzErrMsg, db, "unsupported file format");
--    rc = SQLITE_ERROR;
-+    rc = SQLITE_CORRUPT_BKPT; // Android Change from "rc = SQLITE_ERROR;"
-     goto initone_error_out;
-   }
- 
-@@ -130850,9 +130868,9 @@
+ #else
+@@ -48552,24 +48570,16 @@
+   pPager->memDb = (u8)memDb;
+   pPager->readOnly = (u8)readOnly;
+   assert( useJournal || pPager->tempFile );
+-  pPager->noSync = pPager->tempFile;
+-  if( pPager->noSync ){
+-    assert( pPager->fullSync==0 );
+-    assert( pPager->extraSync==0 );
+-    assert( pPager->syncFlags==0 );
+-    assert( pPager->walSyncFlags==0 );
+-    assert( pPager->ckptSyncFlags==0 );
+-  }else{
+-    pPager->fullSync = 1;
+ #if SQLITE_EXTRA_DURABLE
+     pPager->extraSync = 1;
+ #else
+     pPager->extraSync = 0;
  #endif
- 
- #ifdef SQLITE_ENABLE_FTS3
--  if( !db->mallocFailed && rc==SQLITE_OK ){
--    rc = sqlite3Fts3Init(db);
+-    pPager->syncFlags = SQLITE_SYNC_NORMAL;
+-    pPager->walSyncFlags = SQLITE_SYNC_NORMAL | WAL_SYNC_TRANSACTIONS;
+-    pPager->ckptSyncFlags = SQLITE_SYNC_NORMAL;
 -  }
-+    if( !db->mallocFailed && rc==SQLITE_OK ){
-+      rc = sqlite3Fts3Init(db);
-+    }
++  pPager->noSync = 1;
++  assert( pPager->fullSync==0 );
++  assert( pPager->syncFlags==0 );
++  assert( pPager->walSyncFlags==0 );
++  assert( pPager->ckptSyncFlags==0 );
+   /* pPager->pFirst = 0; */
+   /* pPager->pFirstSynced = 0; */
+   /* pPager->pLast = 0; */
+@@ -93597,7 +93607,7 @@
  #endif
+     sqlite3BtreeLeave(aNew->pBt);
+   }
+-  aNew->safety_level = 3;
++  aNew->safety_level = 1;
+   aNew->zName = sqlite3DbStrDup(db, zName);
+   if( rc==SQLITE_OK && aNew->zName==0 ){
+     rc = SQLITE_NOMEM;
+@@ -135664,7 +135674,7 @@
+   ** database it is 'NONE'. This matches the pager layer defaults.  
+   */
+   db->aDb[0].zName = "main";
+-  db->aDb[0].safety_level = 3;
++  db->aDb[0].safety_level = 1;
+   db->aDb[1].zName = "temp";
+   db->aDb[1].safety_level = 1;
  
- #ifdef SQLITE_ENABLE_ICU
-@@ -136910,16 +136928,28 @@
+@@ -141916,17 +141926,29 @@
+   ** the two scalar functions. If this is successful, register the
    ** module with sqlite.
    */
-   if( SQLITE_OK==rc 
+-  if( SQLITE_OK==rc 
++  if( SQLITE_OK==rc
 +#ifndef ANDROID    /* fts3_tokenizer disabled for security reasons */
     && SQLITE_OK==(rc = sqlite3Fts3InitHashTable(db, pHash, "fts3_tokenizer"))
 +#endif
@@ -170,3 +228,77 @@ diff -r -u -d orig/sqlite3.c ./sqlite3.c
      if( rc==SQLITE_OK ){
        rc = sqlite3_create_module_v2(
            db, "fts4", &fts3Module, (void *)pHash, 0
+@@ -176167,7 +176189,6 @@
+   return pRet;
+ }
+ 
+-
+ /*
+ ** Release a reference to data record returned by an earlier call to
+ ** fts5DataRead().
+@@ -177624,10 +177645,6 @@
+   iPgidx = szLeaf;
+   iPgidx += fts5GetVarint32(&a[iPgidx], iTermOff);
+   iOff = iTermOff;
+-  if( iOff>n ){
+-    p->rc = FTS5_CORRUPT;
+-    return;
+-  }
+ 
+   while( 1 ){
+ 
+@@ -179973,10 +179990,7 @@
+     if( pLvl->aSeg ){
+       int iLvl, iSeg;
+       int iSegOut = 0;
+-      /* Iterate through all segments, from oldest to newest. Add them to
+-      ** the new Fts5Level object so that pLvl->aSeg[0] is the oldest
+-      ** segment in the data structure.  */
+-      for(iLvl=pStruct->nLevel-1; iLvl>=0; iLvl--){
++      for(iLvl=0; iLvl<pStruct->nLevel; iLvl++){
+         for(iSeg=0; iSeg<pStruct->aLevel[iLvl].nSeg; iSeg++){
+           pLvl->aSeg[iSegOut] = pStruct->aLevel[iLvl].aSeg[iSeg];
+           iSegOut++;
+@@ -184363,7 +184377,7 @@
+ ){
+   assert( nArg==0 );
+   UNUSED_PARAM2(nArg, apUnused);
+-  sqlite3_result_text(pCtx, "fts5: 2016-03-03 16:17:53 f047920ce16971e573bc6ec9a48b118c9de2b3a7", -1, SQLITE_TRANSIENT);
++  sqlite3_result_text(pCtx, "fts5: 2016-02-15 17:29:24 3d862f207e3adc00f78066799ac5a8c282430a5f", -1, SQLITE_TRANSIENT);
+ }
+ 
+ static int fts5Init(sqlite3 *db){
+@@ -184424,17 +184438,6 @@
+       );
+     }
+   }
+-
+-  /* If SQLITE_FTS5_ENABLE_TEST_MI is defined, assume that the file
+-  ** fts5_test_mi.c is compiled and linked into the executable. And call
+-  ** its entry point to enable the matchinfo() demo.  */
+-#ifdef SQLITE_FTS5_ENABLE_TEST_MI
+-  if( rc==SQLITE_OK ){
+-    extern int sqlite3Fts5TestRegisterMatchinfo(sqlite3*);
+-    rc = sqlite3Fts5TestRegisterMatchinfo(db);
+-  }
+-#endif
+-
+   return rc;
+ }
+ 
+diff -r -u -d orig/sqlite3.h ./sqlite3.h
+--- orig/sqlite3.h	2016-03-03 08:37:10.000000000 -0800
++++ ./sqlite3.h	2016-02-19 19:35:25.668275942 -0800
+@@ -111,9 +111,9 @@
+ ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
+ ** [sqlite_version()] and [sqlite_source_id()].
+ */
+-#define SQLITE_VERSION        "3.11.1"
+-#define SQLITE_VERSION_NUMBER 3011001
+-#define SQLITE_SOURCE_ID      "2016-03-03 16:17:53 f047920ce16971e573bc6ec9a48b118c9de2b3a7"
++#define SQLITE_VERSION        "3.11.0"
++#define SQLITE_VERSION_NUMBER 3011000
++#define SQLITE_SOURCE_ID      "2016-02-15 17:29:24 3d862f207e3adc00f78066799ac5a8c282430a5f"
+ 
+ /*
+ ** CAPI3REF: Run-Time Library Version Numbers
